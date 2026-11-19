@@ -8,7 +8,7 @@ This document defines the immutable architectural rules, technology stack, codin
 # 1\. Project Overview & Domain Boundaries
 
 - **Product Name:** project-dashboard  
-- **Core Purpose:** A personal single-user executive web dashboard tracking all active software and business projects—aggregating monthly AI token usage, total and monthly active users, monthly and lifetime costs, expenses, profits, and shared fixed-cost service apportionments.  
+- **Core Purpose:** A personal single-user executive web dashboard tracking all active projects inside Antigravity (web apps, mobile apps, 3D assets, and creative workflows)—aggregating per-project token consumption, maintaining an extensible cost architecture for both fixed and metered expenses, and apportioning monthly AI subscription costs (including credit top-ups) proportionally based on token usage.  
 - **Geographic / Domain Scope:** Single-owner personal administration tool (default currency AUD, stored as integer cents or fixed-precision decimal `NUMERIC(12, 2)`). All monthly rollups use calendar months (`YYYY-MM`).  
 - **Primary Surfaces:**  
   1. Authenticated Next.js Web Dashboard (Desktop & Mobile responsive) hosted on Vercel.  
@@ -21,7 +21,7 @@ This document defines the immutable architectural rules, technology stack, codin
 - **Database & ORM:** Neon Serverless Postgres (`@neondatabase/serverless`) with Drizzle ORM (`drizzle-orm`, `drizzle-kit`) for schema definition, batch transactions (`db.batch`), and SQL migrations.  
 - **Authentication:** Single-User Session Cookie (`HttpOnly`, `Secure`, `SameSite=Lax`, signed via `jose` JWT/HMAC using `AUTH_SECRET`) + owner fallback password (`OWNER_PASSWORD_HASH`) and WebAuthn Passkey enrollment (`@simplewebauthn/server` / `@simplewebauthn/browser`), verified in Next.js `middleware.ts`. Ingestion endpoints authenticate via `Authorization: Bearer <INGEST_API_KEY>` using timing-safe comparison.  
 - **Workspace / Module Structure:**  
-  - `src/domain/` - Pure TypeScript domain models, apportionment calculators, rollup aggregators, and repository port interfaces. Zero framework, database, or HTTP imports allowed.  
+  - `src/domain/` - Pure TypeScript domain models, token-weighted apportionment calculator, extensible cost calculators, and repository port interfaces. Zero framework, database, or HTTP imports allowed.  
   - `src/data/` - Drizzle schema (`schema.ts`), Neon database client, repository implementations, and SQL migrations (`drizzle/`).  
   - `src/app/` - Next.js App Router pages, Server Actions, Route Handlers (`/api/*`), and `middleware.ts`.  
   - `src/components/` - Reusable UI components strictly referencing semantic tokens defined in `DESIGN_SYSTEM.md`.  
@@ -32,7 +32,7 @@ This document defines the immutable architectural rules, technology stack, codin
 
 - **Antigravity Token Telemetry:** Local Stop lifecycle hook configured in `.agents/hooks.json` reads session transcript usage metadata (accounting for `input_tokens`, `output_tokens`, and `cache_read_tokens` using camelCase hook context), computes token deltas since the last cursor, and POSTs batches to `/api/ingest/tokens`. Unrecognized project slugs are preserved under unassigned records rather than dropped.  
 - **Offline Hook Resilience:** If the network or Vercel deployment is unreachable, the hook script queues payloads to `~/.cache/antigravity-token-queue.jsonl` and flushes them on subsequent runs, always exiting with status `0` so the IDE is never blocked.  
-- **Manual & Admin Entry:** Monthly user counts (total users, MAU), direct project expenses, gross revenue, and fixed-cost service subscriptions are entered and reconciled through authenticated dashboard Server Actions.
+- **Admin Configuration:** The owner manages project metadata (editable name, repo path, status; slug is immutable) and configures monthly AI costs (base subscription + credit top-ups) directly through authenticated Server Actions.
 
 # 4\. Coding Standards & Hard Guardrails (Negative Constraints)
 
@@ -40,9 +40,10 @@ This document defines the immutable architectural rules, technology stack, codin
   - **Do NOT** import `next/*`, `drizzle-orm`, `@neondatabase/serverless`, or browser APIs inside `src/domain/`.  
   - **Do NOT** execute raw SQL queries directly inside React Server Components or Client Components; route all reads/writes through `src/data/` repositories and Server Actions.  
 - **Financial & Calculation Precision:**  
-  - **Do NOT** use floating-point arithmetic (`Number` division without rounding) for final currency splits. Allocate remainder cents deterministically (largest-remainder method) so apportioned costs always sum exactly to the service's monthly cost.  
-  - **Do NOT** compute historical AI token costs dynamically from mutable pricing tables during rollup queries; calculate and lock `cost_microcents` directly onto `ai_token_logs` rows at ingestion time to enforce `BR-012` snapshot immutability.  
-  - **Do NOT** mutate historical closed `billing_month` snapshots when adding new projects or changing future service allocations. Execute recalculations atomically using `db.batch`.  
+  - **Do NOT** allow modification of a project's `slug` after creation; the slug serves as the immutable foreign key for all incoming Antigravity telemetry.  
+  - **Do NOT** use floating-point arithmetic for currency splits. Allocate remainder cents deterministically (largest-remainder method) so apportioned project costs always sum exactly to the monthly cost entry.  
+  - **Do NOT** hardcode AI pricing logic in isolation; implement costs via the extensible cost ledger (`cost_items`, `monthly_cost_entries`, `project_cost_allocations`) to ensure future fixed subscriptions and metered API costs can be integrated without schema migrations.  
+  - **Do NOT** mutate historical closed `billing_month` snapshots when adding new projects or updating future months. Execute recalculations atomically using `db.batch`.  
 - **Error Handling & Security:**  
   - **Do NOT** leak stack traces, database connection strings, or raw SQL errors in API responses or UI views. Return typed `Result<T, DomainError>` objects from domain/data layers.  
   - **Do NOT** commit `.env`, `.env.local`, or API keys to Git.  

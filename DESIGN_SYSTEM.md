@@ -23,11 +23,10 @@ This document defines the visual tokens, spacing scale, typography, accessibilit
 
 | Semantic Token | Domain State | Light Badge Fill | Light Foreground | Dark Badge Fill | Dark Foreground |
 | :---- | :---- | :---- | :---- | :---- | :---- |
-| `--status-profit` | Net Profit (`> $0`) / Active | `#DCFCE7` | `#166534` | `#052E16` | `#4ADE80` |
-| `--status-loss` | Net Loss (`< $0`) / Ingestion Error | `#FEE2E2` | `#991B1B` | `#450A0A` | `#F87171` |
-| `--status-neutral` | Break-even (`$0`) / Paused | `#F1F5F9` | `#334155` | `#1E293B` | `#CBD5E1` |
-| `--status-prorata` | Pro-Rata Apportionment Mode | `#E0F2FE` | `#075985` | `#082F49` | `#38BDF8` |
-| `--status-even` | Even Split Apportionment Mode | `#FEF3C7` | `#92400E` | `#451A03` | `#FBBF24` |
+| `--status-active` | Active Project / Healthy | `#DCFCE7` | `#166534` | `#052E16` | `#4ADE80` |
+| `--status-paused` | Paused / Archived | `#F1F5F9` | `#334155` | `#1E293B` | `#CBD5E1` |
+| `--status-alert` | Unassigned Telemetry / Error | `#FEE2E2` | `#991B1B` | `#450A0A` | `#F87171` |
+| `--status-apportion` | Token-Weighted Apportionment | `#E0F2FE` | `#075985` | `#082F49` | `#38BDF8` |
 
 # 2\. Spacing & Layout Scale
 
@@ -57,7 +56,7 @@ This document defines the visual tokens, spacing scale, typography, accessibilit
 
 # 4\. Accessibility Guardrails (WCAG AA+)
 
-1. **Color Independence:** Never convey net profit/loss or split mode solely by color. Always prefix net loss values with `-` (e.g., `-$42.50`) and pair status colors with explicit text badges (`Pro-Rata`, `Even Split`, `Active`, `Paused`).  
+1. **Color Independence:** Never convey project status solely by color. Pair status colors with explicit text badges (`Active`, `Paused`, `Archived`, `Unassigned`).  
 2. **Interactive Targets:** All buttons, month selectors, table action triggers, and form inputs must have a minimum hit area of `44px x 44px` on touch viewports and clear `:focus-visible` outlines (`2px solid var(--accent-primary)`).  
 3. **Keyboard & Screen Reader Semantics:** Use semantic `<table>`, `<thead>`, `<th scope="col">`, and `<caption>` elements for financial ledgers; provide `aria-label` attributes on icon-only buttons and month navigation arrows.  
 4. **Reduced Motion:** Respect `prefers-reduced-motion: reduce` by disabling non-essential card transitions.

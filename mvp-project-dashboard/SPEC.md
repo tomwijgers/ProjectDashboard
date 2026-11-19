@@ -2,89 +2,80 @@
 
 **Project:** project-dashboard  
 **Feature:** mvp-project-dashboard  
-**Status:** Draft v1.0  
+**Status:** Approved v2.0  
 **Governed By:** `CONSTITUTION.md`, `DESIGN_SYSTEM.md`
 
 # 1\. Overview & Scope
 
-- **Goal:** Provide a secure, single-user web dashboard to monitor all active projects in one place—tracking monthly AI token consumption, user growth (total and monthly active users), monthly and lifetime costs, expenses, and profits, alongside automated even or pro-rata apportionment of shared fixed-cost services.  
-- **In Scope:**  
+- **Goal:** Provide a secure, single-user executive web dashboard to monitor Antigravity AI token consumption on a per-project basis (web, mobile, 3D asset, and creative workflows), manage monthly AI subscription costs (including credit top-ups), and apportion those costs across projects proportionally to their token usage using an extensible cost architecture.
+- **In Scope (Phase 1 MVP):**  
   - Single-user authentication protecting all dashboard UI and administrative actions.  
-  - Project portfolio registry (create, edit, pause/archive projects with workspace identifiers).  
-  - Automated AI token ingestion endpoint fed by Antigravity IDE Stop lifecycle hooks, with idempotent deduplication and local offline queuing.  
-  - Monthly project metrics tracking (total users, monthly active users, direct project expenses, gross revenue) and cumulative lifetime rollups.  
-  - Shared fixed-cost service registry (monthly and annualized subscriptions) with monthly **Even** and **Pro-Rata** cost apportionment across linked projects.  
-  - Executive dashboard views: portfolio overview, per-project monthly vs. lifetime financial breakdown, and monthly reconciliation workflow.  
-- **Out of Scope (Post-MVP):**  
-  - Multi-tenant team accounts, role-based access control, or public registration.  
-  - Automated billing API scrapers (e.g., pulling invoices automatically from Stripe, AWS, or Vercel APIs).  
-  - Usage-tiered or variable utility service pricing models (MVP covers fixed-cost recurring subscriptions only).  
-  - Multi-currency FX conversion (MVP operates in a single base currency).
+  - Project registry: Create and edit projects (name, repo path, status). The project `slug` is the immutable unique identity used to correlate telemetry.  
+  - Extensible cost management: Configurable monthly AI subscription cost (editable per month to incorporate credit top-ups), architected via an extensible cost ledger for seamless future additions of fixed and metered costs.  
+  - Automated token-weighted cost apportionment: For each billing month, apportion the monthly AI budget across projects proportional to their token consumption using deterministic integer-cent allocation.  
+  - Automated AI token ingestion: Local Antigravity Stop lifecycle hook transmitting input, output, and cached prompt tokens with local offline `.jsonl` buffering and idempotent deduplication.  
+  - Executive dashboard views: Portfolio summary (total tokens, total AI spend, active projects), project token breakdown matrix (monthly tokens, token share %, monthly apportioned AI cost, lifetime tokens, lifetime apportioned cost), project editing modal, monthly AI price edit dialog, and unassigned telemetry banner.
+- **Out of Scope (Deferred to Future Phases):**  
+  - **Phase 2 (Business & Product Metrics):** Gross revenue, direct non-AI expenses, user growth metrics (Total Users, MAU), P&L net profit calculations, and non-AI recurring infrastructure services (Vercel, AWS, domains, SaaS).  
+  - **Phase 3 (External API Metering):** Standalone script telemetry using direct API keys or Vertex AI endpoints, multi-currency FX.
 
 # 2\. User Flows & Functional Requirements
 
 ## 2.1 Single-User Authentication & Access Control
 
-- **FR-001 (Dashboard Authentication):** Unauthenticated requests to any dashboard route must redirect to a login screen. Only the configured single owner can authenticate (via WebAuthn Passkey or owner password) to establish an encrypted session.  
-- **FR-002 (Ingestion Endpoint Authorization):** External telemetry ingestion endpoints must reject requests lacking a valid bearer credential without requiring an interactive browser session.  
-- **FR-003 (Session Termination):** The authenticated owner must be able to sign out explicitly, immediately invalidating the active browser session.
+- **FR-001 (Dashboard Authentication):** Unauthenticated requests to any dashboard route must redirect to `/login`. Only the configured single owner can authenticate (via owner fallback password or WebAuthn Passkey) to establish an encrypted session.  
+- **FR-002 (Ingestion Endpoint Authorization):** External telemetry ingestion endpoints must reject requests lacking a valid Bearer credential without requiring an interactive browser session.  
+- **FR-003 (Session Termination):** The authenticated owner must be able to sign out explicitly, immediately invalidating the active session cookie.
 
-## 2.2 Project Portfolio & Monthly Metrics Management
+## 2.2 Project Portfolio & Cost Management
 
-- **FR-004 (Project Registry):** The owner can create, update, and set lifecycle statuses (Active, Paused, Archived) for projects, assigning each a unique human-readable slug used to correlate incoming telemetry.  
-- **FR-005 (Monthly Project Metrics Entry):** For any selected calendar month (`YYYY-MM`), the owner can record or update a project's **Total Users**, **Monthly Active Users (MAU)**, **Direct Expenses** (project-specific non-shared costs), and **Gross Revenue**.  
-- **FR-006 (Portfolio & Project Financial Views):** The dashboard must display, for each project and across the combined portfolio:  
-  - **Selected Month:** AI Token Count & Estimated AI Cost, Total Users, Monthly Active Users, Apportioned Service Costs, Direct Expenses, Total Monthly Cost, Gross Revenue, and Net Monthly Profit.  
-  - **Lifetime Cumulative:** Cumulative Total Cost (all historical apportioned service costs \+ direct expenses \+ AI token costs), Cumulative Expenses, Cumulative Revenue, and Cumulative Net Profit.
+- **FR-004 (Project Registry & Metadata Editing):** The owner can create and update projects. The project `slug` is assigned upon creation and is strictly immutable. The owner can edit the project's display **Name**, **Repository Path**, and lifecycle **Status** (`active`, `paused`, `archived`) from the dashboard UI.  
+- **FR-005 (Monthly AI Price Management):** The owner can view and edit the total AI cost for any selected calendar month (`YYYY-MM`) directly from the dashboard UI (e.g., updating the default \$33 base subscription to \$53 when a credit pack is purchased).  
+- **FR-006 (Token-Weighted Cost Apportionment):** When viewing a billing month, the system calculates each project's total token consumption (`input + output + cache_read`), determines each project's share of total monthly tokens, and apportions the month's AI cost entry proportionally using the largest-remainder method.  
+- **FR-007 (Portfolio & Project Financial Views):** The dashboard displays for each project and across the portfolio:  
+  - **Selected Month:** Total Tokens Consumed (with breakdown of Input, Output, and Cache Read), Token Share Percentage, and Apportioned AI Cost.  
+  - **Lifetime Cumulative:** Cumulative Historical Tokens Consumed and Cumulative Historical Apportioned AI Cost.
 
 ## 2.3 Antigravity AI Token Tracking
 
-- **FR-007 (Automated Hook Telemetry):** When an Antigravity agent turn completes inside a configured project workspace, a local hook must resolve the project slug (via `.dashboard-project.json` or fallback directory/git name), extract incremental input, output, and cached prompt (`cache_read_tokens`) token counts and model metadata using camelCase hook parameters (`transcriptPath`), and transmit the usage record to the dashboard.  
-- **FR-008 (Idempotent Ingestion, Cost Locking & Unassigned Telemetry):** The ingestion endpoint must deduplicate repeated submissions using a unique event/message cursor key, resolve the target project by slug (or preserve the record with `unassigned_project_slug` if unmatched), compute the estimated token cost based on model rates (including discounted cache token rates), lock the calculated `cost_microcents` onto the record at ingestion time to guarantee immutability (`BR-012`), and attribute the usage to the corresponding `Australia/Melbourne` calendar month.  
-- **FR-009 (Offline Queue & Non-Blocking Execution):** If the dashboard endpoint is unreachable or times out during an IDE session, the local hook must persist the unsent telemetry locally, exit cleanly without blocking or failing the IDE turn, and flush queued records on the next invocation.
-
-## 2.4 Shared Services & Cost Apportionment
-
-- **FR-010 (Fixed-Cost Service Registry):** The owner can create, edit, and deactivate recurring services (e.g., hosting, database, domain, AI subscriptions) with a **Fixed Monthly Cost** (or an annual cost normalized to a monthly equivalent), optional active date range (`start_month` to `end_month`), and a default apportionment mode (Even or Pro-Rata).  
-- **FR-011 (Monthly Project-Service Linking & Recalculation):** For a selected billing month, the owner can link one or more projects to a service, choose Even or Pro-Rata mode for that month, select a split basis (`manual` usage units, recorded `mau`, or recorded monthly `tokens`), and trigger atomic apportionment recalculation.  
-- **FR-012 (Immutable Historical Snapshots):** Recalculating service splits for a target month must persist the calculated apportioned amounts for that month only, leaving prior closed months unchanged even if projects are added or deactivated later.
+- **FR-008 (Automated Hook Telemetry):** When an Antigravity agent turn finishes in a workspace, a local Stop hook resolves the project slug (via `.dashboard-project.json` or fallback workspace folder name), extracts incremental input, output, and cached prompt (`cache_read_tokens`) tokens using camelCase parameters (`transcriptPath`), and transmits the usage record to the dashboard.  
+- **FR-009 (Idempotent Ingestion & Unassigned Telemetry):** The ingestion endpoint deduplicates submissions using a unique message/event cursor key, resolves the target project by slug, attributes usage to the corresponding `Australia/Melbourne` calendar month, and preserves unrecognized slugs under `unassigned_project_slug` with `project_id = NULL` for retroactive assignment.  
+- **FR-010 (Offline Queue & Non-Blocking Execution):** If the dashboard endpoint is unreachable or times out, the local hook persists unsent telemetry to `~/.cache/antigravity-tokens-queue.jsonl`, exits with status `0` without blocking the IDE, and flushes queued records on subsequent runs.
 
 # 3\. Domain Rules & Business Logic
 
-- **BR-001 (Annual-to-Monthly Normalization):** Services billed annually must normalize to a monthly base cost of `annual_cost / 12` rounded to the nearest cent before apportionment.  
-- **BR-002 (Even Apportionment Formula):** When a service has `N` linked projects in month `M` under Even mode (`N >= 1`), each project is allocated `service_monthly_cost / N`. Any remainder cents from integer division are distributed 1 cent at a time deterministically (ordered by project slug ascending) so the sum of project shares equals `service_monthly_cost` exactly.  
-- **BR-003 (Pro-Rata Apportionment Formula):** When a service has `N` linked projects in month `M` under Pro-Rata mode, and project `i` has recorded usage `u_i >= 0` with total usage `U = sum(u_1 ... u_N) > 0`, project `i` is allocated `service_monthly_cost * (u_i / U)` using largest-remainder cent distribution so total shares equal `service_monthly_cost` exactly.  
-- **BR-004 (Zero-Usage Pro-Rata Fallback):** If a service is set to Pro-Rata for month `M` but total usage across all linked projects is `0` (`U = 0`), the system must automatically fall back to Even apportionment (`BR-002`) for that month and flag the fallback in the UI.  
-- **BR-005 (Monthly & Lifetime Financial Rollup Equations):**  
-  - `Monthly Total Cost = Monthly Apportioned Service Costs + Monthly Direct Expenses + Monthly AI Token Cost`  
-  - `Monthly Net Profit = Monthly Gross Revenue - Monthly Total Cost`  
-  - `Lifetime Total Cost = Sum(Monthly Total Cost across all recorded months)`  
-  - `Lifetime Expenses = Sum(Monthly Apportioned Service Costs + Monthly Direct Expenses across all recorded months)`  
-  - `Lifetime Net Profit = Sum(Monthly Gross Revenue across all recorded months) - Lifetime Total Cost`
+- **BR-001 (Extensible Cost Ledger):** All project costs must be modeled through an extensible cost ledger:  
+  - `cost_items`: Cost definitions (for MVP: `'Antigravity AI Subscription'`, type `'fixed_subscription'`, apportionment `'token_weighted'`).  
+  - `monthly_cost_entries`: Month-specific cost amounts (e.g., base subscription + credits purchased for month `M`).  
+  - `project_cost_allocations`: Calculated project shares persisted per month.  
+  This architecture guarantees that future fixed subscriptions (hosting, SaaS) and metered API costs integrate seamlessly without database redesign.  
+- **BR-002 (Token-Weighted Apportionment Formula):**  
+  When month `M` has total AI cost `C` (in integer cents) and `N` projects with token counts `t_1, t_2, ... t_N` where `T = sum(t_i) > 0`:  
+  1. Calculate fractional share for each project: `share_i = t_i / T`.  
+  2. Compute base integer cents: `base_cents_i = floor(C * share_i)`.  
+  3. Compute fractional remainder: `rem_i = (C * share_i) - base_cents_i`.  
+  4. Distribute any remaining cents (`C - sum(base_cents_i)`) one cent at a time to projects with the highest `rem_i` (breaking ties by project slug ascending) so `sum(allocated_cents) == C` exactly.  
+- **BR-003 (Zero-Usage Month Handling):** If total token consumption across all projects in month `M` is `0` (`T = 0`), no project is allocated AI cost, and the total monthly cost entry remains in an unallocated pool.  
+- **BR-004 (Monthly & Lifetime Rollup Equations):**  
+  - `Monthly Project AI Cost = Apportioned Cents from project_cost_allocations for month M`  
+  - `Lifetime Project Tokens = Sum(Tokens logged for project across all recorded months)`  
+  - `Lifetime Project AI Cost = Sum(Monthly Project AI Cost across all recorded months)`  
+- **BR-005 (Closed Month Snapshot Immutability):** Recalculating allocations or updating project metadata affects only the target month; historical closed months remain frozen.
 
 # 4\. Edge Cases & Error States
 
 | Scenario | Trigger Condition | Expected User-Facing Behavior |
 | :---- | :---- | :---- |
-| **Unknown Project Slug in Hook** | Antigravity hook sends a `projectSlug` not registered in the dashboard | Ingestion API saves the payload with `project_id = NULL` and `unassigned_project_slug = <slug>`, returning `200 OK` with `unassigned: 1`; dashboard displays an unassigned telemetry alert banner with an action to assign it to an existing or new project. |
-| **Prompt Cache Tokens** | Hook sends `cacheReadTokens` in addition to input/output tokens | Ingestion computes `cost_microcents` using discounted cache read rates and locks the computed cost onto the record. |
-| **Duplicate Hook Delivery** | Network retry resends an already-ingested cursor/event ID | Ingestion API returns `200 OK` (idempotent no-op) without double-counting tokens or costs. |
-| **Service Linked to Zero Projects** | Active fixed-cost service has 0 linked projects in month `M` | Service cost appears under an "Unallocated Overhead" summary line on the portfolio overview so total out-of-pocket spend is never hidden. |
-| **Negative Profit / Net Loss** | Total costs exceed gross revenue for a project or month | Net profit renders with a minus sign (e.g., `-$35.00`) and loss status indicator; lifetime cumulative profit accurately deducts loss months. |
-| **Empty Month / New Project** | Viewing a month with no recorded metrics or a newly created project | Displays `$0.00` / `0` values cleanly with a prompt to enter monthly metrics or run apportionment. |
+| **Unknown Project Slug in Hook** | Antigravity hook sends a `projectSlug` not registered in the dashboard | Ingestion API saves record with `project_id = NULL` and `unassigned_project_slug = <slug>`, returning `200 OK` with `unassigned: 1`; dashboard displays an unassigned telemetry alert banner with an action to assign it to a project. |
+| **Duplicate Hook Delivery** | Network retry resends an already-ingested cursor/event ID | Ingestion API returns `200 OK` (idempotent no-op) without double-counting tokens. |
+| **Zero Tokens in Month** | Viewing a month with no recorded Antigravity turns | Displays `0` tokens cleanly; monthly AI cost shows as unallocated overhead with a prompt to run recalculation once activity occurs. |
+| **Credit Top-Up for Month** | Owner buys additional AI credits during an intensive month | Owner clicks "Edit AI Cost" on the month selector and updates the amount (e.g. from \$33 to \$53); recalculation distributes the updated budget according to token usage. |
+| **Missing `.dashboard-project.json`** | Workspace lacks project configuration file | Hook resolves slug from the workspace folder name or Git repository root. |
 
-# 5\. Clarifications & Resolved Ambiguities
+# 5\. Acceptance Criteria (Testable Definitions of Done)
 
-| ID | Question / Ambiguity | Resolution / Default Assumed | Date |
-| :---- | :---- | :---- | :---- |
-| Q-1 | Should "Costs" vs. "Expenses" be tracked distinctly in monthly and lifetime metrics? | Yes: **Direct Expenses** represent project-specific non-shared outlays (e.g., ads, contractors, one-off fees), **Apportioned Service Costs** represent shared infrastructure subscriptions, **AI Token Cost** tracks LLM spend, and **Total Cost** is their combined sum subtracted from Gross Revenue to yield Net Profit. | 2026-11-19 |
-| Q-2 | What happens if a project has 0 usage in a Pro-Rata service split while other projects have `> 0` usage? | That project receives `$0.00` (0% share), and 100% of the service cost is distributed proportionally among the projects with positive usage. If *all* linked projects have 0 usage, `BR-004` falls back to an Even split. | 2026-11-19 |
-| Q-3 | Should Antigravity token costs be included inside Monthly/Lifetime Total Costs? | Yes (`BR-005`), calculated from ingested token counts multiplied by model rates (locked at ingestion time), while also broken out separately so AI burn is transparent. | 2026-11-19 |
-
-# 6\. Acceptance Criteria (Testable Definitions of Done)
-
-1. **AC-1 (Maps to FR-001, FR-003):** Given an unauthenticated browser session, when navigating to `/`, then the user is redirected to `/login`; after authenticating with valid owner credentials, the user accesses the portfolio dashboard and can sign out to revoke access.  
-2. **AC-2 (Maps to FR-004, FR-005, FR-006, BR-005):** Given two projects with recorded monthly users, direct expenses, revenue, and token usage across two months, when viewing the dashboard for Month 2, then both Month 2 metrics and cumulative Month 1 \+ Month 2 lifetime costs, expenses, and net profits match `BR-005` to the exact cent.  
-3. **AC-3 (Maps to FR-007, FR-008, FR-009):** Given an active Antigravity workspace containing `.dashboard-project.json`, when an agent turn finishes, then `log_antigravity_tokens.py` parses camelCase hook inputs and posts token deltas (including `cache_read_tokens`) to `/api/ingest/tokens`, the dashboard locks `cost_microcents` at ingestion time and increments that project's monthly token count and AI cost, and re-sending the exact same payload does not create duplicate rows.  
-4. **AC-4 (Maps to FR-010, FR-011, FR-012, BR-002, BR-003, BR-004):** Given a `$10.00/mo` shared service linked to 3 projects under Even mode, when apportionment runs, then allocations equal `$3.34`, `$3.33`, and `$3.33` (summing to `$10.00`); when switched to Pro-Rata with usage `100, 300, 0`, allocations update to `$2.50`, `$7.50`, and `$0.00` without altering any prior closed month.  
-5. **AC-5 (Maps to FR-008):** Given an ingestion payload referencing an unregistered `projectSlug`, when ingested, the record is stored with `unassigned_project_slug`, appears on the dashboard unassigned telemetry banner, and can be assigned to a project to update attribution without mutating raw event timestamps.
+1. **AC-1 (Authentication & Route Security):** Given an unauthenticated browser session, when navigating to `/`, the user is redirected to `/login`; after authenticating with owner credentials, the user accesses the dashboard and can sign out to revoke access.  
+2. **AC-2 (Project Registry & Immutability):** Given an existing project, the owner can edit its display name, repo path, and status via the dashboard UI, while the project slug cannot be edited.  
+3. **AC-3 (Monthly AI Cost Editing & Apportionment):** Given month `2026-11` with two active projects (`Project A` using 70,000 tokens, `Project B` using 30,000 tokens), when the monthly AI cost is set to `$50.00`, then running apportionment allocates `$35.00` to Project A and `$15.00` to Project B (summing to exactly `$50.00`).  
+4. **AC-4 (Antigravity Hook Telemetry):** Given an active Antigravity workspace, when an agent turn completes, then `log_antigravity_tokens.py` posts the token delta (including `cache_read_tokens`) to `/api/ingest/tokens`, the dashboard increments that project's token count, and re-sending the same payload does not create duplicate entries.  
+5. **AC-5 (Unassigned Telemetry Resolution):** Given telemetry received for an unregistered slug, the event is saved under `unassigned_project_slug`, an alert banner appears on the dashboard, and assigning that slug to a project attributes all unassigned records to that project.
