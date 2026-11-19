@@ -21,11 +21,13 @@ This document defines the immutable architectural rules, technology stack, codin
 - **Database & ORM:** Neon Serverless Postgres (`@neondatabase/serverless`) with Drizzle ORM (`drizzle-orm`, `drizzle-kit`) for schema definition, batch transactions (`db.batch`), and SQL migrations.  
 - **Authentication:** Single-User Session Cookie (`HttpOnly`, `Secure`, `SameSite=Lax`, signed via `jose` JWT/HMAC using `AUTH_SECRET`) + owner fallback password (`OWNER_PASSWORD_HASH`) and WebAuthn Passkey enrollment (`@simplewebauthn/server` / `@simplewebauthn/browser`), verified in Next.js `middleware.ts`. Ingestion endpoints authenticate via `Authorization: Bearer <INGEST_API_KEY>` using timing-safe comparison.  
 - **Workspace / Module Structure:**  
-  - `src/domain/` - Pure TypeScript domain models, token-weighted apportionment calculator, extensible cost calculators, and repository port interfaces. Zero framework, database, or HTTP imports allowed.  
-  - `src/data/` - Drizzle schema (`schema.ts`), Neon database client, repository implementations, and SQL migrations (`drizzle/`).  
-  - `src/app/` - Next.js App Router pages, Server Actions, Route Handlers (`/api/*`), and `middleware.ts`.  
-  - `src/components/` - Reusable UI components strictly referencing semantic tokens defined in `DESIGN_SYSTEM.md`.  
-  - `scripts/` - Local Antigravity hook scripts (`log_antigravity_tokens.py`) and local offline retry queue handlers.  
+  - Repository Root: Reserved for top-level documentation, specification suites (`CONSTITUTION.md`, `DESIGN_SYSTEM.md`, `mvp-project-dashboard/`), hook integration scripts (`scripts/`), and future tools.  
+  - `app/` - Dedicated application root containing the Next.js workspace:  
+    - `app/src/domain/` - Pure TypeScript domain models, token-weighted apportionment calculator, extensible cost calculators, and repository port interfaces. Zero framework, database, or HTTP imports allowed.  
+    - `app/src/data/` - Drizzle schema (`schema.ts`), Neon database client, repository implementations, and SQL migrations (`drizzle/`).  
+    - `app/src/app/` - Next.js App Router pages, Server Actions, Route Handlers (`/api/*`), and `middleware.ts`.  
+    - `app/src/components/` - Reusable UI components strictly referencing semantic tokens defined in `DESIGN_SYSTEM.md`.  
+  - `scripts/` - Local Antigravity hook scripts (`log_antigravity_tokens.py`) and local offline retry queue handlers at repository root.  
 - **Concurrency & Time:** Store all timestamps in UTC (`timestamptz`). Group monthly ledger metrics by `billing_month` (`YYYY-MM` string) using `Australia/Melbourne` local calendar boundaries via `Intl.DateTimeFormat` at ingestion time.
 
 # 3\. Data Sourcing & External Integrations
@@ -36,9 +38,10 @@ This document defines the immutable architectural rules, technology stack, codin
 
 # 4\. Coding Standards & Hard Guardrails (Negative Constraints)
 
-- **Strict Layer Separation:**  
-  - **Do NOT** import `next/*`, `drizzle-orm`, `@neondatabase/serverless`, or browser APIs inside `src/domain/`.  
-  - **Do NOT** execute raw SQL queries directly inside React Server Components or Client Components; route all reads/writes through `src/data/` repositories and Server Actions.  
+- **Strict Layer Separation & Directory Guardrails:**  
+  - **Do NOT** place application source files, package manifests, or build configs in the repository root; all Next.js application code resides strictly inside `app/`.  
+  - **Do NOT** import `next/*`, `drizzle-orm`, `@neondatabase/serverless`, or browser APIs inside `app/src/domain/`.  
+  - **Do NOT** execute raw SQL queries directly inside React Server Components or Client Components; route all reads/writes through `app/src/data/` repositories and Server Actions.  
 - **Financial & Calculation Precision:**  
   - **Do NOT** allow modification of a project's `slug` after creation; the slug serves as the immutable foreign key for all incoming Antigravity telemetry.  
   - **Do NOT** use floating-point arithmetic for currency splits. Allocate remainder cents deterministically (largest-remainder method) so apportioned project costs always sum exactly to the monthly cost entry.  
@@ -48,7 +51,7 @@ This document defines the immutable architectural rules, technology stack, codin
   - **Do NOT** leak stack traces, database connection strings, or raw SQL errors in API responses or UI views. Return typed `Result<T, DomainError>` objects from domain/data layers.  
   - **Do NOT** commit `.env`, `.env.local`, or API keys to Git.  
 - **Testing Mandate (Test-First):**  
-  - All domain logic in `src/domain/` (especially even/pro-rata cost apportionment, remainder cent distribution, and lifetime rollups) must have Vitest unit tests written before implementation code.
+  - All domain logic in `app/src/domain/` (especially token-weighted cost apportionment and remainder cent distribution) must have Vitest unit tests written before implementation code.
 
 # 5\. Canonical Patterns (Few-Shot Anchors)
 
@@ -66,10 +69,13 @@ export type Result<T, E = DomainError> =
 
 # 6\. Commands & Verification Gates
 
-- **Unit & Domain Tests:** `npm test` (Vitest)  
-- **Type Check & Lint:** `npm run typecheck && npm run lint`  
-- **Database Migrations:** `npx drizzle-kit generate && npx drizzle-kit migrate`  
-- **Production Build Verification:** `npm run build`
+Commands are executed from the `app/` directory (or with `--prefix app`):
+
+- **Unit & Domain Tests:** `cd app && npm test` (Vitest)  
+- **Type Check & Lint:** `cd app && npm run typecheck && npm run lint`  
+- **Database Migrations:** `cd app && npx drizzle-kit generate && npx drizzle-kit migrate`  
+- **Production Build Verification:** `cd app && npm run build`  
+- **Hook Script Tests:** `python3 -m unittest scripts/test_log_antigravity_tokens.py` (run from repository root)
 
 # 7\. Security, Privacy & Agent Workflow Rules
 

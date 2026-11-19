@@ -9,7 +9,13 @@
 
 # 1\. Architecture & Component Mapping
 
-## Domain Layer (`src/domain/`)
+## Directory & Workspace Layout
+
+To maintain separation between high-level project documentation, specification suites, and implementation code:
+- **Repository Root:** Contains specification suites (`CONSTITUTION.md`, `DESIGN_SYSTEM.md`, `mvp-project-dashboard/`), hook integration scripts (`scripts/`), and project-level configs.
+- **`app/` Folder:** Dedicated subfolder housing the entire Next.js web application, its package manifests (`package.json`, `tsconfig.json`, `drizzle.config.ts`), source code, and tests.
+
+## Domain Layer (`app/src/domain/`)
 
 - `models.ts`: Pure TypeScript interfaces for `Project`, `CostItem`, `MonthlyCostEntry`, `ProjectCostAllocation`, `TokenUsageEvent`, and `ProjectTokenSummary`.  
 - `apportionment.ts`: Pure deterministic apportionment engine (`calculateTokenWeightedApportionment`) implementing `BR-002` (largest-remainder cent distribution proportional to token usage) and `BR-003` (zero-usage fallback).  
@@ -17,7 +23,7 @@
 - `dateUtils.ts`: Pure timezone helper `toMelbourneBillingMonth(date)` using `Intl.DateTimeFormat` with `timeZone: 'Australia/Melbourne'`.  
 - `ports.ts`: Repository interfaces (`ProjectRepository`, `CostLedgerRepository`, `TokenLogRepository`, `PasskeyCredentialRepository`).
 
-## Data Layer (`src/data/`)
+## Data Layer (`app/src/data/`)
 
 - `db.ts`: Neon HTTP serverless Drizzle client (`drizzle(neon(process.env.DATABASE_URL!))`), utilizing `db.batch([...])` for atomic recalculation writes.  
 - `schema.ts`: Drizzle PostgreSQL schema defining:
@@ -27,9 +33,9 @@
   - `project_cost_allocations` (persisted monthly project cost shares with token basis units).
   - `ai_token_logs` (idempotency key, project ID, unassigned slug, model, input/output/cache tokens, billing month).
   - `owner_passkeys` (WebAuthn credentials).
-- `repositories/*.ts`: Concrete Drizzle implementations of `src/domain/ports.ts`.
+- `repositories/*.ts`: Concrete Drizzle implementations of `app/src/domain/ports.ts`.
 
-## Application & API Layer (`src/app/`)
+## Application & API Layer (`app/src/app/`)
 
 - `middleware.ts`: Verifies `pd_session` signed JWT cookie via `jose`; redirects unauthenticated browser requests to `/login`.  
 - `app/login/page.tsx` & `app/api/auth/*`: Owner password login (`scrypt` check against `OWNER_PASSWORD_HASH`) as primary onboarding flow, with WebAuthn Passkey registration/authentication.  
@@ -165,7 +171,7 @@ export interface ProjectTokenSummary {
 
 # 4\. Test Strategy & Fixtures
 
-## Domain Unit Tests (`src/domain/__tests__/`)
+## Domain Unit Tests (`app/src/domain/__tests__/`)
 
 - `apportionment.test.ts`:  
   - Proportional split: `$50.00` across 70,000 and 30,000 tokens yields `$35.00` and `$15.00`.  
